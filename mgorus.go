@@ -1,46 +1,64 @@
 package mgorus
 
 import (
+	"encoding/binary"
 	"fmt"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
-type hooker struct {
-	c *mgo.Collection
+type Hook struct {
+	collection *mgo.Collection
+	origin     string
 }
 
-type M bson.M
+type doc struct {
+	Id      bson.ObjectId `bson:"_id,omitempty"`
+	Level   string        `bson:"level"`
+	Origin  string        `bson:"origin,omitempty"`
+	Message string        `bson:"message"`
+	Data    bson.M        `bson:"data"`
+}
 
-func NewHooker(mgoUrl, db, collection string) (*hooker, error) {
-	session, err := mgo.Dial(mgoUrl)
-	if err != nil {
-		return nil, err
+func New(origin string, collection *mgo.Collection) *Hook {
+	return &Hook{
+		collection: collection,
+		origin:     origin,
 	}
-
-	return &hooker{c: session.DB(db).C(collection)}, nil
 }
 
-func (h *hooker) Fire(entry *logrus.Entry) error {
-	entry.Data["Level"] = entry.Level.String()
-	entry.Data["Time"] = entry.Time
-	entry.Data["Message"] = entry.Message
+func timedObjectId(t time.Time) bson.ObjectId {
+	id := []byte(bson.NewObjectId())
+	binary.BigEndian.PutUint32(id, uint32(t.Unix()))
+	return bson.ObjectId(id)
+}
+
+func (h *Hook) Fire(entry *logrus.Entry) error {
+	doc := &doc{
+		Id:      timedObjectId(entry.Time),
+		Level:   entry.Level.String(),
+		Origin:  h.origin,
+		Message: entry.Message,
+		Data:    bson.M(entry.Data),
+	}
 	if errData, ok := entry.Data[logrus.ErrorKey]; ok {
-		if err, ok := errData.(error); ok && entry.Data[logrus.ErrorKey] != nil {
+		if err, ok := errData.(error); ok {
 			entry.Data[logrus.ErrorKey] = err.Error()
+		} else {
+			doc.Data[logrus.ErrorKey] = errData
 		}
 	}
-	mgoErr := h.c.Insert(M(entry.Data))
-	if mgoErr != nil {
-		return fmt.Errorf("Failed to send log entry to mongodb: %s", mgoErr)
+	err := h.collection.Insert(doc)
+	if err != nil {
+		return fmt.Errorf("Failed to send log entry to mongodb: %s", err)
 	}
-
 	return nil
 }
 
-func (h *hooker) Levels() []logrus.Level {
+func (h *Hook) Levels() []logrus.Level {
 	return []logrus.Level{
 		logrus.PanicLevel,
 		logrus.FatalLevel,
