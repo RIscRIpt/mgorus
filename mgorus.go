@@ -10,6 +10,8 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+// Hook is a wrapper around mgo.Collection, which implements
+// the Fire method, so it can be used as a logrus.Hook
 type Hook struct {
 	collection *mgo.Collection
 	origin     string
@@ -23,6 +25,10 @@ type doc struct {
 	Data    bson.M        `bson:"data"`
 }
 
+// New returns a ready-to-use logrus.Hook
+//
+// Example:
+//     logrus.AddHook(mgorus.New("system", mgo.Database("test").C("logs")))
 func New(origin string, collection *mgo.Collection) *Hook {
 	return &Hook{
 		collection: collection,
@@ -36,6 +42,7 @@ func timedObjectId(t time.Time) bson.ObjectId {
 	return bson.ObjectId(id)
 }
 
+// Fire implements one of logrus.Hook interface methods.
 func (h *Hook) Fire(entry *logrus.Entry) error {
 	doc := &doc{
 		Id:      timedObjectId(entry.Time),
@@ -58,6 +65,9 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 	return nil
 }
 
+// Levels implements one of logrus.Hook interface methods.
+// Returns a slice of levels, which represent a log level
+// when this Hook must be triggered.
 func (h *Hook) Levels() []logrus.Level {
 	return []logrus.Level{
 		logrus.PanicLevel,
