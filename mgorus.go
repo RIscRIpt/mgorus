@@ -46,7 +46,7 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 	}
 	if errData, ok := entry.Data[logrus.ErrorKey]; ok {
 		if err, ok := errData.(error); ok {
-			entry.Data[logrus.ErrorKey] = err.Error()
+			doc.Data[logrus.ErrorKey] = err.Error()
 		} else {
 			doc.Data[logrus.ErrorKey] = errData
 		}
